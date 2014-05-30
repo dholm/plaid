@@ -1,6 +1,6 @@
-from wtforms import form, fields, validators
-from app import db
-from app.models import User
+from wtforms import form
+from wtforms import fields
+from wtforms import validators
 
 
 # Define login and registration forms (for flask-login)
@@ -9,6 +9,10 @@ class LoginForm(form.Form):
     password = fields.PasswordField(validators=[validators.required()])
     remember_me = fields.BooleanField()
     submit = fields.SubmitField('Login')
+
+    def __init__(self, *args, **kwargs):
+        super(LoginForm, self).__init__(*args, **kwargs)
+        self._schema = kwargs.get('schema')
 
     def validate_email(self, field):
         user = self.get_user()
@@ -24,7 +28,7 @@ class LoginForm(form.Form):
 
     def get_user(self):
         email = self.email.data.strip()
-        return db.session.query(User).filter_by(email=email).first()
+        return self._schema.User.get_by_email(email)
 
 
 class RegistrationForm(form.Form):
@@ -38,7 +42,12 @@ class RegistrationForm(form.Form):
     name = fields.TextField(validators=[validators.required()])
     submit = fields.SubmitField('Register')
 
+    def __init__(self, *args, **kwargs):
+        super(RegistrationForm, self).__init__(*args, **kwargs)
+        self._schema = kwargs.get('schema')
+
     def validate_email(self, field):
-        if db.session.query(User).filter_by(email=self.email.data).count() > 0:
+        user = self._schema.User.get_by_email(email=self.email.data)
+        if user is not None:
             raise validators.ValidationError('E-Mail already used. Did you '
                                              'forget your password?')

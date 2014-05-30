@@ -1,3 +1,5 @@
-from app import app
+from app import PlaidBuilder
 
-app.run(debug=True)
+
+if __name__ == '__main__':
+    _plaid_builder = PlaidBuilder(debug=True)

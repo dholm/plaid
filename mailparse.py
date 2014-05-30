@@ -1,33 +1,23 @@
-from flask.ext.script import Manager
-from flask.ext.migrate import Migrate
-
-import re
 import datetime
-import operator
-
-from email.header import Header, decode_header
-from email.utils import parsedate_tz, mktime_tz
-
-from app import app, db
-from app.parser import parse_patch
-from app.models import Submitter, Patch, Comment, Project, Serie, Tag
-
 import mailbox
+import operator
+import re
 
+from email.header import Header
+from email.header import decode_header
+from email.utils import mktime_tz
+from email.utils import parsedate_tz
 
-def import_mailbox(path):
-    mbox = mailbox.mbox(path, create=False)
-    for mail in mbox:
-        import_mail(mail)
-    return None
+from app.parser import parse_patch
+
 
 list_id_headers = ['List-ID', 'X-Mailing-List', 'X-list']
-
-migrate = Migrate(app, db)
-manager = Manager(app)
-
 whitespace_re = re.compile('\s+')
 gitsendemail_re = re.compile("<(\d+-\d+)-(\d+)-git-send-email-(.+)")
+re_re = re.compile('^(re|fwd?)[:\s]\s*', re.I)
+prefix_re = re.compile('^\[([^\]]*)\]\s*(.*)$')
+split_re = re.compile('[,\s]+')
+sig_re = re.compile('^(-- |_+)\n.*', re.S | re.M)
 
 
 def normalise_space(str):
@@ -66,14 +56,6 @@ def find_project_name(mail):
             return listid
 
 
-def find_project(mail):
-    project_name = find_project_name(mail)
-    if project_name:
-        return Project.query.filter_by(listid=project_name).first()
-    else:
-        return None
-
-
 def derive_tag_names(subject):
     # skip the parts indicating the index in series (e.g., [1/2])
     if subject.find(']') != -1:
@@ -84,10 +66,6 @@ def derive_tag_names(subject):
         # no colon
         return []
     return [x.strip() for x in parts[0:-1] if x.strip().find(' ') == -1]
-
-
-def find_or_create_tags(tag_names):
-    return [Tag.get_or_create(tag_name) for tag_name in tag_names]
 
 
 def find_submitter_name_and_email(mail):
@@ -124,13 +102,6 @@ def find_submitter_name_and_email(mail):
     return (name, email)
 
 
-def find_submitter(mail):
-    (name, email) = find_submitter_name_and_email(mail)
-    submitter = Submitter.get_or_create(name=name, email=email)
-
-    return submitter
-
-
 def mail_date(mail):
     t = parsedate_tz(mail.get('Date', ''))
     if not t:
@@ -156,96 +127,6 @@ def find_pull_request(content):
     return None
 
 
-def find_content(project, mail):
-    patchbuf = None
-    commentbuf = ''
-    pullurl = None
-
-    for part in mail.walk():
-        if part.get_content_maintype() != 'text':
-            continue
-
-        payload = part.get_payload(decode=True)
-        charset = part.get_content_charset()
-        subtype = part.get_content_subtype()
-
-        # if we don't have a charset, assume utf-8
-        if charset is None:
-            charset = 'utf-8'
-
-        if not isinstance(payload, unicode):
-            payload = unicode(payload, charset)
-
-        if subtype in ['x-patch', 'x-diff']:
-            patchbuf = payload
-
-        elif subtype == 'plain':
-            c = payload
-
-            if not patchbuf:
-                (patchbuf, c) = parse_patch(payload)
-
-            if not pullurl:
-                pullurl = find_pull_request(payload)
-
-            if c is not None:
-                commentbuf += c.strip() + '\n'
-
-    patch = None
-    comment = None
-
-    if pullurl or patchbuf:
-        name = clean_subject(mail.get('Subject'), [project.linkname])
-        tag_names = derive_tag_names(name)
-        tags = find_or_create_tags(tag_names)
-        patch = Patch(name=name, pull_url=pullurl, content=patchbuf,
-                      date=mail_date(mail), headers=mail_headers(mail),
-                      tags=tags)
-
-    if commentbuf:
-        if patch:
-            cpatch = patch
-        else:
-            cpatch = find_patch_for_comment(project, mail)
-            if not cpatch:
-                return (None, None)
-        comment = Comment(patch=cpatch, date=mail_date(mail),
-                          content=clean_content(commentbuf),
-                          headers=mail_headers(mail))
-
-    return (patch, comment)
-
-
-def find_patch_for_comment(project, mail):
-    # construct a list of possible reply message ids
-    refs = []
-    if 'In-Reply-To' in mail:
-        refs.append(mail.get('In-Reply-To'))
-
-    if 'References' in mail:
-        rs = mail.get('References').split()
-        rs.reverse()
-        for r in rs:
-            if r not in refs:
-                refs.append(r)
-
-    for ref in refs:
-        patch = None
-
-        # first, check for a direct reply
-        patch = Patch.query.filter_by(project=project, msgid=ref).first()
-
-        # see if we have comments that refer to a patch
-        if not patch:
-            comment = Comment.query.filter_by(msgid=ref).first()
-            if comment:
-                return comment.patch
-
-    return patch
-
-split_re = re.compile('[,\s]+')
-
-
 def split_prefixes(prefix):
     """ Turn a prefix string into a list of prefix tokens
 
@@ -266,9 +147,6 @@ def split_prefixes(prefix):
     """
     matches = split_re.split(prefix)
     return [s for s in matches if s != '']
-
-re_re = re.compile('^(re|fwd?)[:\s]\s*', re.I)
-prefix_re = re.compile('^\[([^\]]*)\]\s*(.*)$')
 
 
 def clean_subject(subject, drop_prefixes=None):
@@ -345,8 +223,6 @@ def clean_subject(subject, drop_prefixes=None):
 
     return subject
 
-sig_re = re.compile('^(-- |_+)\n.*', re.S | re.M)
-
 
 def clean_content(str):
     """ Try to remove signature (-- ) and list footer (_____) cruft """
@@ -354,62 +230,170 @@ def clean_content(str):
     return str.strip()
 
 
-def import_mail(mail):
+class MailImporter(object):
+    def __init__(self, schema):
+        self._schema = schema
 
-    # some basic sanity checks
-    if 'From' not in mail:
-        return 0
+    def import_mail(self, mail):
+        # some basic sanity checks
+        if 'From' not in mail:
+            return 0
 
-    if 'Subject' not in mail:
-        return 0
+        if 'Subject' not in mail:
+            return 0
 
-    if 'Message-Id' not in mail:
-        return 0
+        if 'Message-Id' not in mail:
+            return 0
 
-    hint = mail.get('X-Patchwork-Hint', '').lower()
-    if hint == 'ignore':
-        return 0
+        hint = mail.get('X-Patchwork-Hint', '').lower()
+        if hint == 'ignore':
+            return 0
 
-    project = find_project(mail)
-    if project is None:
-        print "No project for %s found" % find_project_name(mail)
-        return 0
+        project = self.find_project(mail)
+        if project is None:
+            print "No project for %s found" % find_project_name(mail)
+            return 0
 
-    msgid = mail.get('Message-Id').strip()
+        msgid = mail.get('Message-Id').strip()
+        submitter = self.find_submitter(mail)
+        (patch, comment) = self.find_content(project, mail)
 
-    submitter = find_submitter(mail)
-
-    (patch, comment) = find_content(project, mail)
-
-    if patch:
-        # we delay the saving until we know we have a patch.
-        match = gitsendemail_re.match(msgid)
-        if match:
-            (uid, num, email) = match.groups()
-            serie = Serie.get_or_create(uid)
-            serie.patches.append(patch)
-            db.session.add(serie)
-        patch.submitter = submitter
-        patch.msgid = msgid
-        patch.project = project
-#        patch.state = get_state(mail.get('X-Patchwork-State', '').strip())
-#        patch.delegate = get_delegate(
-#                mail.get('X-Patchwork-Delegate', '').strip())
-        db.session.add(patch)
-
-    if comment:
-        # looks like the original constructor for Comment takes the pk
-        # when the Comment is created. reset it here.
         if patch:
-            comment.patch = patch
-        comment.submitter = submitter
-        comment.msgid = msgid
+            # we delay the saving until we know we have a patch.
+            match = gitsendemail_re.match(msgid)
+            if match:
+                (uid, num, email) = match.groups()
+                series = self._schema.Series.get_or_create(uid)
+                series.patches.append(patch)
+                series.create()
 
-        db.session.add(comment)
+            patch.submitter = submitter
+            patch.msgid = msgid
+            patch.project = project
+            patch.create()
 
-    db.session.commit()
-    return 0
+        if comment:
+            # looks like the original constructor for Comment takes the pk
+            # when the Comment is created. reset it here.
+            if patch:
+                comment.patch = patch
+            comment.submitter = submitter
+            comment.msgid = msgid
+            comment.create()
 
+        self._schema.commit()
+        return 0
 
-if __name__ == '__main__':
-    manager.run()
+    def import_mailbox(self, path):
+        mbox = mailbox.mbox(path, create=False)
+        for mail in mbox:
+            self.import_mail(mail)
+        return None
+
+    def find_project(self, mail):
+        project_name = find_project_name(mail)
+        if project_name:
+            Project = self._schema.Project
+            return Project.query.filter_by(listid=project_name).first()
+        else:
+            return None
+
+    def find_or_create_tags(self, tag_names):
+        Tag = self._schema.Tag
+        return [Tag.get_or_create(tag_name) for tag_name in tag_names]
+
+    def find_submitter(self, mail):
+        (name, email) = find_submitter_name_and_email(mail)
+        Submitter = self._schema.Submitter
+        submitter = Submitter.get_or_create(name=name, email=email)
+
+        return submitter
+
+    def find_content(self, project, mail):
+        patchbuf = None
+        commentbuf = ''
+        pullurl = None
+
+        for part in mail.walk():
+            if part.get_content_maintype() != 'text':
+                continue
+
+            payload = part.get_payload(decode=True)
+            charset = part.get_content_charset()
+            subtype = part.get_content_subtype()
+
+            # if we don't have a charset, assume utf-8
+            if charset is None:
+                charset = 'utf-8'
+
+            if not isinstance(payload, unicode):
+                payload = unicode(payload, charset)
+
+            if subtype in ['x-patch', 'x-diff']:
+                patchbuf = payload
+
+            elif subtype == 'plain':
+                c = payload
+
+                if not patchbuf:
+                    (patchbuf, c) = parse_patch(payload)
+
+                if not pullurl:
+                    pullurl = find_pull_request(payload)
+
+                if c is not None:
+                    commentbuf += c.strip() + '\n'
+
+        patch = None
+        if pullurl or patchbuf:
+            name = clean_subject(mail.get('Subject'), [project.linkname])
+            tag_names = derive_tag_names(name)
+            tags = self.find_or_create_tags(tag_names)
+            Patch = self._schema.Patch
+            patch = Patch(name=name, pull_url=pullurl, content=patchbuf,
+                          date=mail_date(mail), headers=mail_headers(mail),
+                          tags=tags)
+
+        comment = None
+        if commentbuf:
+            if patch:
+                cpatch = patch
+            else:
+                cpatch = self.find_patch_for_comment(project, mail)
+                if not cpatch:
+                    return (None, None)
+            Comment = self._schema.Comment
+            comment = Comment(patch=cpatch, date=mail_date(mail),
+                              content=clean_content(commentbuf),
+                              headers=mail_headers(mail))
+
+        return (patch, comment)
+
+    def find_patch_for_comment(self, project, mail):
+        # construct a list of possible reply message ids
+        refs = []
+        if 'In-Reply-To' in mail:
+            refs.append(mail.get('In-Reply-To'))
+
+        if 'References' in mail:
+            rs = mail.get('References').split()
+            rs.reverse()
+            for r in rs:
+                if r not in refs:
+                    refs.append(r)
+
+        for ref in refs:
+            patch = None
+
+            # first, check for a direct reply
+            Patch = self._schema.Patch
+            patch = Patch.query.filter_by(project=project, msgid=ref).first()
+
+            # see if we have comments that refer to a patch
+            if not patch:
+                Comment = self._schema.Comment
+                comment = Comment.query.filter_by(msgid=ref).first()
+                if comment:
+                    return comment.patch
+
+        return patch

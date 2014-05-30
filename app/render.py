@@ -1,8 +1,8 @@
-from app import app
+import pygments.lexers as lexers
+
 from jinja2 import Markup
 from pygments import highlight
 from pygments.formatters.html import HtmlFormatter
-import pygments.lexers as lexers
 from pygments.lexer import RegexLexer, bygroups
 from pygments.token import Keyword
 from pygments.token import Name
@@ -11,7 +11,6 @@ from pygments.token import Text
 
 
 class CodeHtmlFormatter(HtmlFormatter):
-
     def wrap(self, source, outfile):
         return self._wrap_code(source)
 
@@ -51,5 +50,8 @@ def render_headers(data):
     formatter = HtmlFormatter(encoding='utf-8')
     return Markup(highlight(data, lexer, formatter).decode('utf-8'))
 
-app.jinja_env.globals.update(render_headers=render_headers)
-app.jinja_env.globals.update(render_patch=render_patch)
+
+class RenderBuilder(object):
+    def __init__(self, plaid):
+        plaid.jinja_env.globals.update(render_headers=render_headers)
+        plaid.jinja_env.globals.update(render_patch=render_patch)
