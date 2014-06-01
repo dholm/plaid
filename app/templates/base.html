@@ -14,6 +14,7 @@
         <div class="breadcrumb">
         {% if user!=None and user.is_authenticated() and not user.is_anonymous(): %}
         Logged in as {{user.get_username()}} - <a href="/logout">Logout</a>
+        <a href="/profile/{{ user.name }}"><span class="glyphicon glyphicon-wrench icons-padding"></span> Profile settings</a>
         {% else %}
         User not authenticated. <a href="/login">Login</a> or <a href="/register">register</a>.
         {% endif %}
