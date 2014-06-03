@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% from "macros.html" import paginate, render_tags %}
 {% block head %}
-    <link rel="stylesheet" type="text/css" href="{{url_for('static', filename='css/pygments.css')}}" />
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/pygments.css') }}" />
 {% endblock %}
 
 
 {% block breadcrumb %}
-<li><a href="{{ url_for('project', project_name=patch.project.name) }}">{{ patch.project.name }}</a></li>
+<li><a href="{{ url_for('project', project_name=patch.set.project.name) }}">{{ patch.set.project.name }}</a></li>
 {% if patch_set is defined %}
-<li><a href="{{ url_for('patch_set', patch_set_id=patch_set.id) }}">{{ patch_set.name }}</a></li>
+<li><a href="{{ url_for('patch_set', patch_set_id=patch_set.id) }}">{{ patch_set.name|truncate(80) }}</a></li>
 {% endif %}
 <li>{{ patch.name|truncate(80) }}</li>
 {% endblock %}
@@ -18,16 +18,16 @@
 <table class="table">
 <tbody><tr>
     <th>Submitter</th>
-    <td><a href="{{patch.submitter.email}}">{{patch.submitter.name}}</a></td>
+    <td><a href="{{ patch.submitter.email }}">{{ patch.submitter.name }}</a></td>
 </tr>
 <tr>
     <th>Date</th>
-    <td>{{patch.date}}</td>
+    <td>{{ patch.date }}</td>
 </tr>
 <tr>
     <th>Message ID</th>
     <td>
-        <a href="http://news.gmane.org/find-root.php?message_id={{patch.msgid}}">{{patch.msgid}}
+        <a href="http://news.gmane.org/find-root.php?message_id={{ patch.msgid }}">{{ patch.msgid }}
         </a>
     </td>
 </tr>
@@ -35,26 +35,26 @@
 <tr>
     <th>Tags</th>
     <td>
-        {{render_tags(patch.tags)}}
+        {{ render_tags(patch.tags) }}
     </td>
 </tr>
 {% endif %}
 <tr>
     <th>Download</th>
     <td>
-    <a href="{{url_for('patch', patch_id=patch.id, format='mbox')}}">mbox</a> |
-    <a href="{{url_for('patch', patch_id=patch.id, format='patch')}}">patch</a>
+    <a href="{{ url_for('patch', patch_id=patch.id, format='mbox') }}">mbox</a> |
+    <a href="{{ url_for('patch', patch_id=patch.id, format='patch') }}">patch</a>
     </td>
 </tr>
 <tr>
     <th>Permalink</th>
-    <td><a href="{{url_for('patch', patch_id=patch.id)}}">
-        {{url_for('patch', patch_id=patch.id)}}</a>
+    <td><a href="{{ url_for('patch', patch_id=patch.id) }}">
+        {{ url_for('patch', patch_id=patch.id) }}</a>
     </td>
 </tr>
 <tr>
     <th>State</th>
-    <td>{{patch.state}}</td>
+    <td>{{ patch.state }}</td>
 </tr>
 
 <tr>
@@ -65,15 +65,15 @@
 <tr>
   <td colspan=2>
     <div class="collapse" id="patchheaders">
-      {{render_headers(patch.headers)}}
+      {{ render_headers(patch.headers) }}
     </div>
   </td>
 </tr>
 </tbody>
 </table>
 
-{% if page is defined %}
-    {{paginate(page, endpoint)}}
+{% if patch_page is defined and 1 < patch_page.pages %}
+    {{ paginate(patch_page, endpoint) }}
 {% endif %}
 
 <div class="panel panel-default">
@@ -81,14 +81,14 @@
     <h3 class="panel-title">{{title}}</h3>
 </div>
 <div class="panel-body">
-{{render_patch(patch.content)}}
+{{ render_patch(patch.content) }}
 </div>
 </div>
 
 {%- for comment in patch.comments %}
 <div class="panel panel-default">
 <div class="panel-heading">
-    <h3 class="panel-title">{{comment.submitter.name}} - {{comment.date}}</h3>
+    <h3 class="panel-title">{{ comment.submitter.name }} - {{ comment.date }}</h3>
 </div>
 <div class="panel-body">
 <pre>

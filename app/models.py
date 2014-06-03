@@ -141,9 +141,6 @@ class Patch(EmailMixin, db.Model):
     submitter = db.relationship('Submitter', backref='patches')
     pull_url = db.Column(db.String(255))
     commit_ref = db.Column(db.String(255), default=None)
-    project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
-    project = db.relationship('Project',
-                              backref=backref('patches', lazy='dynamic'))
     ancestor_id = db.Column(db.Integer, db.ForeignKey('patch.id'))
     ancestor = db.relationship('Patch', backref="successor", remote_side=[id])
     set_id = db.Column(db.Integer, db.ForeignKey('patch_set.id'))
@@ -200,6 +197,9 @@ class PatchSet(db.Model):
     name = db.Column(db.String(255))
     uid = db.Column(db.String(255), unique=True, nullable=True)
     date = db.Column(db.DateTime(), default=datetime.now)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
+    project = db.relationship('Project',
+                              backref=backref('patch_sets', lazy='dynamic'))
 
     @classmethod
     def get_or_create(self, uid, name=None):

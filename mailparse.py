@@ -332,7 +332,10 @@ def find_patch_for_comment(project, mail):
         patch = None
 
         # first, check for a direct reply
-        patch = Patch.query.filter_by(project=project, msgid=ref).first()
+        query = Patch.query.join(PatchSet)
+        query = query.filter(PatchSet.project == project,
+                             Patch.msgid == ref)
+        patch = query.group_by(Patch).first()
 
         # see if we have comments that refer to a patch
         if not patch:
@@ -392,12 +395,14 @@ def import_mail(mail):
         match = gitsendemail_re.match(header_parser.message_id)
         if match:
             (uid, num, email) = match.groups()
-            patch_set = PatchSet.get_or_create(uid)
-            patch_set.patches.append(patch)
-            db.session.add(patch_set)
+        else:
+            uid = header_parser.message_id
+        patch_set = PatchSet.get_or_create(uid)
+        patch_set.project = project
+        patch_set.patches.append(patch)
+        db.session.add(patch_set)
         patch.submitter = submitter
         patch.msgid = header_parser.message_id
-        patch.project = project
         db.session.add(patch)
 
     if comment is not None:

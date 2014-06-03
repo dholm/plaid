@@ -6,8 +6,10 @@
 
 {% block content %}
 <ul>
-{% for patch in project.patches %}
-<li><a href="{{url_for('patch',patch_id=patch.id)}}">{{patch.name}}</a></li>
+{% for patch_set in project.patch_sets %}
+{% for patch in patch_set.patches %}
+<li><a href="{{ url_for('patch_set', patch_set_id=patch.set.id) }}">{{ patch.name }}</a></li>
+{% endfor%}
 {% endfor%}
 </ul>
 {% endblock %}

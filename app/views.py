@@ -87,6 +87,7 @@ def project(project_name):
                            user=login.current_user,
                            project=project)
 
+
 @app.route('/tag')
 @app.route('/tag/<tag_name>')
 def tag(tag_name=None):
@@ -105,23 +106,24 @@ def tag(tag_name=None):
 
 
 @app.route('/patchset/<int:patch_set_id>')
-@app.route('/patchset/<int:patch_set_id>/<int:page_index>')
-def patch_set(patch_set_id, page_index=1):
+@app.route('/patchset/<int:patch_set_id>/<int:patch_index>')
+def patch_set(patch_set_id, patch_index=1):
     patch_set = PatchSet.query.filter_by(id=patch_set_id).first_or_404()
-    page = Patch.query.filter_by(set_id=patch_set_id)
-    page = page.order_by(Patch.date)
-    page = page.paginate(page_index, 1)
-    patch = page.items[0]
+    patches_per_page = 1
+    patch_page = Patch.query.filter_by(set_id=patch_set_id)
+    patch_page = patch_page.order_by(Patch.date)
+    patch_page = patch_page.paginate(patch_index, patches_per_page)
 
-    def endpoint(page_index):
+    def endpoint(patch_index):
         return url_for('patch_set', patch_set_id=patch_set_id,
-                       page_index=page_index)
+                       patch_index=patch_index)
 
+    patch = patch_page.items[0]
     return render_template('patch.html',
                            user=login.current_user,
-                           patch=page.items[0],
+                           patch=patch,
                            patch_set=patch_set,
-                           page=page,
+                           patch_page=patch_page,
                            endpoint=endpoint)
 
 
