@@ -6,6 +6,7 @@ from flask import request
 from flask import url_for
 
 from flask.ext import login
+from flask.ext.admin import helpers
 from flask.ext.user import login_required
 
 from jinja2 import Markup
